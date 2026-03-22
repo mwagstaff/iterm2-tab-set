@@ -13,6 +13,7 @@ var cssColors  = require('./csscolors')
 var packageMeta = require('./package.json')
 var util       = require('./util')
 var _          = require('underscore')
+var TOML       = require('@iarna/toml')
 
 util.globalize(util)
 
@@ -31,7 +32,7 @@ var colors = cssColors()
 var allcolors = _.clone(colors) // remember even if deleted
 var cssColorNames = _.keys(colors).sort()
 var dirConfigDir = path.join(process.env.HOME, '.iterm2-tab-set-mwagstaff')
-var dirConfigPath = path.join(dirConfigDir, 'config.json')
+var dirConfigPath = path.join(dirConfigDir, 'config.toml')
 
 updateColorMap('default', defaultColorSpec)
 
@@ -75,7 +76,7 @@ function process_args () {
     println('       --title|-t <string>')
     println('       --pwd')
     println('       --mode  0 | 1 | 2')
-    println('       --init               create ~/.iterm2-tab-set-mwagstaff/config.json')
+    println('       --init               create ~/.iterm2-tab-set-mwagstaff/config.toml')
     println('       --add <name> <colorspec>')
     println('       --add <name> --pick|-p')
     println('       --del <name>')
@@ -508,17 +509,32 @@ function initConfigFile () {
     errorExit('config path exists but is not a directory')
   }
 
-  var sample = {
-    directories: {
-      '~': {
-        color: 'blue',
-        match: 'exact'
-      }
-    }
-  }
+  var sample = [
+    '# iterm2-tab-set directory color configuration',
+    '#',
+    '# Each entry maps a directory path to a tab color.',
+    '#',
+    '# Match modes:',
+    '#   exact  - color applies only when you are in this exact directory',
+    '#   prefix - color applies to this directory AND all subdirectories',
+    '#            (useful for coloring an entire project tree)',
+    '#',
+    '# Color values can be CSS names ("blue"), hex ("#add8e6"), or rgb() strings.',
+    '#',
+    '# Example — color ~/dev and everything beneath it:',
+    '#   [directories."/Users/you/dev"]',
+    '#   color = "blue"',
+    '#   match = "prefix"',
+    '#',
+    '',
+    '[directories."~"]',
+    'color = "blue"',
+    'match = "exact"',
+    ''
+  ].join('\n')
 
   fs.mkdirSync(dirConfigDir, { recursive: true })
-  writeJSON(dirConfigPath, sample)
+  fs.writeFileSync(dirConfigPath, sample)
 }
 
 /**
@@ -542,13 +558,13 @@ function readDirectoryColors (filepath) {
   }
 
   debugKV('directory config', { path: filepath, exists: true })
-  var payload = readOptionalJSON(filepath)
+  var payload = readOptionalTOML(filepath)
   if (!payload) {
     return []
   }
 
   if (!_.isObject(payload) || _.isArray(payload)) {
-    warnDirectoryConfig('expected a top-level JSON object')
+    warnDirectoryConfig('expected a top-level TOML object')
     return []
   }
 
@@ -605,11 +621,11 @@ function lookupDirectoryColor (dirpath) {
     : null
 }
 
-function readOptionalJSON (filepath) {
+function readOptionalTOML (filepath) {
   try {
-    return JSON.parse(fs.readFileSync(filepath, 'utf8'))
+    return TOML.parse(fs.readFileSync(filepath, 'utf8'))
   } catch (e) {
-    warnDirectoryConfig(formatJSONError(e), jsonErrorPointer(e, filepath))
+    warnDirectoryConfig(formatTOMLError(e), tomlErrorPointer(e, filepath))
     return null
   }
 }
@@ -623,28 +639,21 @@ function warnDirectoryConfig (message, detail) {
   }
 }
 
-function formatJSONError (err) {
-  var message = err && err.message ? err.message : err.toString()
-  var location = message.match(/\(line (\d+) column (\d+)\)/)
-  if (location) {
-    return 'invalid JSON at line ' + location[1] + ' column ' + location[2]
+function formatTOMLError (err) {
+  if (err && err.line != null && err.col != null) {
+    return 'invalid TOML at line ' + err.line + ' column ' + err.col
   }
-  return message
+  return err && err.message ? err.message : err.toString()
 }
 
-function jsonErrorPointer (err, filepath) {
-  if (!err || !err.message) {
-    return null
-  }
-
-  var location = err.message.match(/\(line (\d+) column (\d+)\)/)
-  if (!location) {
+function tomlErrorPointer (err, filepath) {
+  if (!err || err.line == null || err.col == null) {
     return null
   }
 
   var lines = fs.readFileSync(filepath, 'utf8').split(/\r?\n/)
-  var lineIndex = parseInt(location[1], 10) - 1
-  var column = parseInt(location[2], 10)
+  var lineIndex = err.line - 1
+  var column = err.col
   var sourceLine = lines[lineIndex]
   if (sourceLine === undefined) {
     return null

@@ -37,6 +37,7 @@
   "author": "Mike Wagstaff (original author: Jonathan Eunice)",
   "license": "MIT",
   "dependencies": {
+    "@iarna/toml": "^2.2.5",
     "linewrap": "^0.2.1",
     "minimist": "^1.2.0",
     "run-applescript": "^3.0.0",
