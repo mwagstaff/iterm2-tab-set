@@ -76,7 +76,9 @@ function process_args () {
     println('       --title|-t <string>')
     println('       --pwd')
     println('       --mode  0 | 1 | 2')
-    println('       --init               create ~/.iterm2-tab-set-mwagstaff/config.toml')
+    println('       --init               create a config file for setting custom tab colors')
+    println('                            per directory — edit it to assign colors to your')
+    println('                            project dirs (supports exact and prefix matching)')
     println('       --add <name> <colorspec>')
     println('       --add <name> --pick|-p')
     println('       --del <name>')
@@ -535,6 +537,8 @@ function initConfigFile () {
 
   fs.mkdirSync(dirConfigDir, { recursive: true })
   fs.writeFileSync(dirConfigPath, sample)
+  println('Created', tildify(dirConfigPath))
+  println('Edit this file to set custom tab colors for your directories.')
 }
 
 /**
