@@ -504,7 +504,7 @@ function interpretConfig (config) {
  */
 function initConfigFile () {
   if (fs.existsSync(dirConfigPath)) {
-    errorExit('config file already exists')
+    errorExit('config file already exists:', tildify(dirConfigPath))
   }
 
   if (fs.existsSync(dirConfigDir) && !fs.statSync(dirConfigDir).isDirectory()) {
