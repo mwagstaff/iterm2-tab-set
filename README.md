@@ -176,13 +176,56 @@ example above nixes `papayawhip`.
 
 You can also redefine the default color, using the key `default`.
 
-The fastest way to get going with your own named colors is:
+You can create `.tabset` manually with the example above, then use
+`tabset --add`, `tabset --del`, and `tabset --list` to maintain the
+named colors over time.
+
+Directory Color Overrides
+-------------------------
+
+If you want specific directories to always use specific tab colors,
+create a configuration directory in your home directory called
+`.iterm2-tab-set-mwagstaff`, then add a `config.json` file inside it.
+
+Give it a `directories` map, like so:
+
+    {
+      "directories": {
+        "/Users/mwagstaff/dev/top-scores": "lightblue",
+        "~/dev/another-project": {
+          "color": "rgb(173,216,230)",
+          "match": "exact"
+        },
+        "~/scratch": {
+          "color": [173, 216, 230],
+          "match": "prefix"
+        },
+        "/tmp/demo": {
+          "color": "#add8e6",
+          "match": "prefix"
+        }
+      }
+    }
+
+Values may be CSS color names, `rgb(...)` strings, hex color strings,
+or RGB arrays. A plain color value implies exact matching. Object values
+may set `match` to either `exact` or `prefix`; `prefix` applies the color
+to the configured directory and any child directories. The file is read
+every time `tabset` runs, so changes take effect immediately.
+
+If the file contains invalid JSON or bad color data, `tabset` will print
+a warning to stderr and continue running.
+
+If a directory color is not being applied as expected, run `tabset --debug`
+to print the executing script path, version, normalized current directory,
+and matched directory-color entry to stderr.
+
+Running:
 
     tabset --init
 
-Which will create a sample
-`.tabset` in your `$HOME` directory if it does
-not already exist.
+will create a starter `~/.iterm2-tab-set-mwagstaff/config.json` file that
+maps your home directory (`~`) to `blue` using exact matching.
 
 `tabset` also provides commands to make selecting and update
 custom color

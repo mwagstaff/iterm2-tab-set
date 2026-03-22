@@ -1,6 +1,6 @@
 {
-  "name": "iterm2-tab-set",
-  "version": "0.7.4",
+  "name": "iterm2-tab-set-mwagstaff",
+  "version": "0.7.5",
   "description": "Set iTerm2 tab color, title, and/or badge",
   "main": "tabset.js",
   "scripts": {
@@ -12,7 +12,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jonathaneunice/iterm2-tab-set"
+    "url": "https://github.com/mwagstaff/iterm2-tab-set"
   },
   "files": [
     "docs",
@@ -34,7 +34,7 @@
     "differentiate",
     "Mac"
   ],
-  "author": "Jonathan Eunice",
+  "author": "Mike Wagstaff (original author: Jonathan Eunice)",
   "license": "MIT",
   "dependencies": {
     "linewrap": "^0.2.1",

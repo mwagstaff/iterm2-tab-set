@@ -10,6 +10,7 @@ var tildify    = require('tildify')
 var stringHash = require('string-hash')
 var colorpick  = require('./colorpick')
 var cssColors  = require('./csscolors')
+var packageMeta = require('./package.json')
 var util       = require('./util')
 var _          = require('underscore')
 
@@ -29,6 +30,8 @@ var defaultColorSpec = 'peru'
 var colors = cssColors()
 var allcolors = _.clone(colors) // remember even if deleted
 var cssColorNames = _.keys(colors).sort()
+var dirConfigDir = path.join(process.env.HOME, '.iterm2-tab-set-mwagstaff')
+var dirConfigPath = path.join(dirConfigDir, 'config.json')
 
 updateColorMap('default', defaultColorSpec)
 
@@ -45,15 +48,16 @@ const defaultConfig = { colors: {
                       }
 var config = readJSON(configpath) || defaultConfig
 interpretConfig(config)
+var directoryColors = readDirectoryColors(dirConfigPath)
 process_args()
 
 
 function process_args () {
+  debugStartup()
 
   args.pwd ? println('dir:', cwd) : null;
 
-  if (ARGS_DEBUG)
-    console.log('args:', args)
+  debugKV('args', args)
   // help requested
   if (args.help) {
     println()
@@ -71,7 +75,7 @@ function process_args () {
     println('       --title|-t <string>')
     println('       --pwd')
     println('       --mode  0 | 1 | 2')
-    println('       --init')
+    println('       --init               create ~/.iterm2-tab-set-mwagstaff/config.json')
     println('       --add <name> <colorspec>')
     println('       --add <name> --pick|-p')
     println('       --del <name>')
@@ -88,13 +92,13 @@ function process_args () {
   var noSpecificArgs = (_.size(args) === (argopt['boolean'].length + 1 + 1));
       // always expect _ and booleans (e.g. pwd and verbose)
       // they do not count at "specific" arguments
-  dprintln('noSpecificArgs:', jsonify(noSpecificArgs))
+  debugKV('noSpecificArgs', noSpecificArgs)
   if (!nFreeArgs && noSpecificArgs) {
     args.all = settingString(null, 'all')
     if (!args.all) {
       args.all = cwd
     }
-    dprintln('set args.all to', args.all)
+    debugKV('default args.all', args.all)
   }
 
   if (args.colors) {
@@ -108,21 +112,33 @@ function process_args () {
   } else if (nFreeArgs > 1) {
     args.all = args._.join(' ')
   }
-  if (ARGS_DEBUG) {
-    console.log('nFreeArgs:', nFreeArgs)
-    console.log('setting args.all to:' , args.all)
-  }
+  debugKV('nFreeArgs', nFreeArgs)
+  debugKV('resolved args.all', args.all)
 
   if (args.all) {
     setBadge(args.all)
     setTabTitle(args.all, definedOr(args.mode, 1))
-    var col = decodeColorSpec(args.all)
+    var colorSource = null
+    var directoryMatch = (!args.color && !args.hash) ? lookupDirectoryColor(cwd) : null
+    var col = directoryMatch ? directoryMatch.rgb : null
+    if (directoryMatch) {
+      colorSource = 'directory config (' + tildify(directoryMatch.path) + ')'
+    }
+    if (!col) {
+      col = decodeColorSpec(args.all)
+      if (col) {
+        colorSource = 'explicit/all argument'
+      }
+    }
     if (!col) {
       var colorNames = _.keys(colors).sort()
       var index = stringHash(args.all) % colorNames.length
       var hashColor = colorNames[index]
       col = colors[hashColor]
+      colorSource = 'hash fallback (' + hashColor + ')'
     }
+    debugKV('selected color source', colorSource)
+    debugKV('selected color rgb', rgbstr(col))
     showChoice('picked color:', hashColor)
     setTabColor(col, definedOr(args.mode, 1))
   }
@@ -195,15 +211,12 @@ function settingString(s, category) {
   if ((s === true) || (!s)) {
     finalS = config.defaults[category]
   }
-  if (ARGS_DEBUG)
-    console.log('s:', s, 'finalS:', finalS, 'cwd:', cwd)
+  debugKV('settingString ' + category, { input: s, resolved: finalS, cwd: cwd })
   if ((finalS === '~') || (finalS == process.env['HOME'])) {
     return tildify(cwd)
   } else if ((finalS === '.') || (finalS === cwd)){
     return path.basename(cwd)
   }
-  if (ARGS_DEBUG)
-    console.log('backup return')
   return finalS
 }
 
@@ -282,6 +295,10 @@ function swatchString (rgb, length) {
  * hex rgb spec.
  */
 function decodeColorSpec (spec) {
+  if (_.isArray(spec)) {
+    return isRGBValue(spec) ? spec : null
+  }
+
   spec = spec.toString();  // in case not string already
 
   // exact match for existing named color?
@@ -332,11 +349,19 @@ function decodeColor (name) {
   if (!_.isString(name)) {
     // --color invoked, but no color specified
 
+    var directoryMatch = lookupDirectoryColor(cwd)
+    if (directoryMatch) {
+      debugKV('selected color source', 'directory config (' + tildify(directoryMatch.path) + ')')
+      debugKV('selected color rgb', rgbstr(directoryMatch.rgb))
+      return directoryMatch.rgb
+    }
+
     // might be a hashed color request
     if (args.hash) {
       var index = stringHash(args.hash) % colorNames.length
       var hashColor = colorNames[index]
-      showChoice('hashed color:', hashColor)
+      debugKV('selected color source', 'hash fallback (' + hashColor + ')')
+      debugKV('selected color rgb', rgbstr(colors[hashColor]))
       return colors[hashColor]
     }
 
@@ -475,21 +500,25 @@ function interpretConfig (config) {
  * Write a suitable default configuration file
  */
 function initConfigFile () {
-  if (fs.existsSync(configpath)) {
+  if (fs.existsSync(dirConfigPath)) {
     errorExit('config file already exists')
   }
 
+  if (fs.existsSync(dirConfigDir) && !fs.statSync(dirConfigDir).isDirectory()) {
+    errorExit('config path exists but is not a directory')
+  }
+
   var sample = {
-    colors: {
-      alisongreen: 'rgb(125,199,53)',
-      js: 'orchid',
-      html: 'gold',
-      server: 'alisongreen',
-      papayawhip: null
+    directories: {
+      '~': {
+        color: 'blue',
+        match: 'exact'
+      }
     }
   }
 
-  writeJSON(configpath, sample)
+  fs.mkdirSync(dirConfigDir, { recursive: true })
+  writeJSON(dirConfigPath, sample)
 }
 
 /**
@@ -503,5 +532,241 @@ function updateColorMap (key, value) {
     var rgb = decodeColorSpec(value)
     colors[key] = rgb
     allcolors[key] = rgb
+  }
+}
+
+function readDirectoryColors (filepath) {
+  if (!fs.existsSync(filepath)) {
+    debugKV('directory config', { path: filepath, exists: false })
+    return []
+  }
+
+  debugKV('directory config', { path: filepath, exists: true })
+  var payload = readOptionalJSON(filepath)
+  if (!payload) {
+    return []
+  }
+
+  if (!_.isObject(payload) || _.isArray(payload)) {
+    warnDirectoryConfig('expected a top-level JSON object')
+    return []
+  }
+
+  if (!_.has(payload, 'directories')) {
+    return []
+  }
+
+  if (!_.isObject(payload.directories) || _.isArray(payload.directories)) {
+    warnDirectoryConfig('expected "directories" to be an object')
+    return []
+  }
+
+  var normalized = []
+  _.each(payload.directories, function (spec, dirpath) {
+    var entry = parseDirectoryColorEntry(dirpath, spec)
+    if (!entry) {
+      return
+    }
+    debugKV('directory color entry', {
+      configuredPath: dirpath,
+      normalizedPath: entry.path,
+      match: entry.match,
+      color: entry.originalColor,
+      rgb: entry.rgb
+    })
+    normalized.push(entry)
+  })
+  return normalized
+}
+
+function lookupDirectoryColor (dirpath) {
+  var normalizedPath = normalizeDirectoryPath(dirpath)
+  var match = null
+
+  _.each(directoryColors, function (entry) {
+    if (!directoryEntryMatches(entry, normalizedPath)) {
+      return
+    }
+    if (!match || compareDirectoryEntries(entry, match) > 0) {
+      match = entry
+    }
+  })
+
+  debugKV('directory color lookup', {
+    cwd: dirpath,
+    normalizedCwd: normalizedPath,
+    matched: !!match,
+    matchedPath: match ? match.path : null,
+    matchMode: match ? match.match : null,
+    rgb: match ? match.rgb : null
+  })
+  return match
+    ? { path: match.path, rgb: match.rgb, match: match.match }
+    : null
+}
+
+function readOptionalJSON (filepath) {
+  try {
+    return JSON.parse(fs.readFileSync(filepath, 'utf8'))
+  } catch (e) {
+    warnDirectoryConfig(formatJSONError(e), jsonErrorPointer(e, filepath))
+    return null
+  }
+}
+
+function warnDirectoryConfig (message, detail) {
+  error('warning: ignoring', tildify(dirConfigPath) + ':', message)
+  if (detail) {
+    _.each(detail, function (line) {
+      error(line)
+    })
+  }
+}
+
+function formatJSONError (err) {
+  var message = err && err.message ? err.message : err.toString()
+  var location = message.match(/\(line (\d+) column (\d+)\)/)
+  if (location) {
+    return 'invalid JSON at line ' + location[1] + ' column ' + location[2]
+  }
+  return message
+}
+
+function jsonErrorPointer (err, filepath) {
+  if (!err || !err.message) {
+    return null
+  }
+
+  var location = err.message.match(/\(line (\d+) column (\d+)\)/)
+  if (!location) {
+    return null
+  }
+
+  var lines = fs.readFileSync(filepath, 'utf8').split(/\r?\n/)
+  var lineIndex = parseInt(location[1], 10) - 1
+  var column = parseInt(location[2], 10)
+  var sourceLine = lines[lineIndex]
+  if (sourceLine === undefined) {
+    return null
+  }
+
+  return [
+    '  ' + sourceLine,
+    '  ' + padRight('', Math.max(column - 1, 0)) + '^'
+  ]
+}
+
+function isRGBValue (value) {
+  return _.isArray(value) &&
+         value.length === 3 &&
+         _.every(value, function (component) {
+           return _.isNumber(component) &&
+                  component >= 0 &&
+                  component <= 255 &&
+                  Math.floor(component) === component
+         })
+}
+
+function normalizeDirectoryPath (dirpath) {
+  var resolved = resolveSymbolic(dirpath)
+  try {
+    return fs.realpathSync(resolved)
+  } catch (e) {
+    return path.resolve(resolved)
+  }
+}
+
+function parseDirectoryColorEntry (dirpath, spec) {
+  var entrySpec = spec
+  var match = 'exact'
+
+  if (_.isObject(spec) && !_.isArray(spec)) {
+    if (!_.has(spec, 'color')) {
+      warnDirectoryConfig('invalid color for ' + jsonify(dirpath))
+      return null
+    }
+    entrySpec = spec.color
+    match = definedOr(spec.match, 'exact')
+  }
+
+  if ((match !== 'exact') && (match !== 'prefix')) {
+    warnDirectoryConfig('invalid match mode for ' + jsonify(dirpath) +
+                        '; expected "exact" or "prefix"')
+    return null
+  }
+
+  var rgb = decodeColorSpec(entrySpec)
+  if (!rgb) {
+    warnDirectoryConfig('invalid color for ' + jsonify(dirpath))
+    return null
+  }
+
+  return {
+    path: normalizeDirectoryPath(dirpath),
+    match: match,
+    originalColor: entrySpec,
+    rgb: rgb
+  }
+}
+
+function directoryEntryMatches (entry, normalizedPath) {
+  if (entry.match === 'exact') {
+    return normalizedPath === entry.path
+  }
+
+  if (normalizedPath === entry.path) {
+    return true
+  }
+
+  return normalizedPath.indexOf(entry.path + path.sep) === 0
+}
+
+function compareDirectoryEntries (left, right) {
+  if (left.path.length !== right.path.length) {
+    return left.path.length - right.path.length
+  }
+
+  if (left.match === right.match) {
+    return 0
+  }
+
+  return (left.match === 'exact') ? 1 : -1
+}
+
+function debugStartup () {
+  if (!ARGS_DEBUG) {
+    return
+  }
+
+  debugKV('runtime', {
+    package: packageMeta.name,
+    version: packageMeta.version,
+    node: process.version,
+    argv1: process.argv[1],
+    realScript: safeRealpath(process.argv[1] || __filename),
+    cwd: cwd,
+    home: process.env.HOME
+  })
+}
+
+function debugKV (label, value) {
+  if (!ARGS_DEBUG) {
+    return
+  }
+
+  if (value === undefined) {
+    error('debug:', label)
+  } else if (_.isString(value)) {
+    error('debug:', label + ':', value)
+  } else {
+    error('debug:', label + ':', jsonify(value))
+  }
+}
+
+function safeRealpath (filepath) {
+  try {
+    return fs.realpathSync(filepath)
+  } catch (e) {
+    return filepath
   }
 }
